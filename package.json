@@ -17,7 +17,27 @@
         "command": "codeloop.helloWorld",
         "title": "Hello World"
       }
-    ]
+    ],
+
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codeloop",
+          "title": "CodeLoop",
+          "icon": "resources/codeloop.svg"
+        }
+      ]
+    },
+
+    "views": {
+      "codeloop": [
+        {
+          "type": "webview",
+          "id": "codeloop.chat",
+          "name": "Chat"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
