@@ -1,16 +1,19 @@
 import * as vscode from 'vscode';
 import { OllamaService } from './OllamaService';
+import { WorkspaceService } from './WorkspaceService';
 
 export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
     public static readonly viewType = 'codeloop.chat';
 
     private readonly ollamaService: OllamaService;
+    private readonly workspaceService: WorkspaceService;
 
     constructor(
         private readonly extensionUri: vscode.Uri
     ) {
         this.ollamaService = new OllamaService();
+        this.workspaceService = new WorkspaceService();
     }
 
     public resolveWebviewView(
@@ -32,10 +35,70 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
                 try {
 
+                    /*
+                     * Get workspace information.
+                     */
+
+                    const workspaceRoot =
+                        this.workspaceService.getWorkspaceRoot();
+
+                    const workspaceFiles =
+                        await this.workspaceService.getWorkspaceFiles();
+
+
+                    /*
+                     * Build the context that will be
+                     * provided to the local model.
+                     */
+
+                    const workspaceContext = `
+Workspace root:
+${workspaceRoot ?? 'No workspace open'}
+
+Workspace files:
+${workspaceFiles.length > 0
+    ? workspaceFiles.join('\n')
+    : 'No workspace files found'}
+`;
+
+
+                    /*
+                     * Build the final prompt.
+                     */
+
+                    const prompt = `
+You are CodeLoop, a local-first AI coding agent.
+
+You have read-only access to the current
+VS Code workspace.
+
+${workspaceContext}
+
+User request:
+${message.prompt}
+
+Use the workspace information above
+when it is relevant.
+
+Do not claim that you modified,
+created, or deleted any files.
+`;
+
+
+                    /*
+                     * Send the request to Ollama.
+                     */
+
                     const response =
                         await this.ollamaService.chat(
-                            message.prompt
+                            prompt
                         );
+
+
+                    /*
+                     * Send the response back
+                     * to the webview.
+                     */
 
                     webviewView.webview.postMessage({
                         type: 'response',
@@ -47,7 +110,7 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                     const errorMessage =
                         error instanceof Error
                             ? error.message
-                            : 'Unknown Ollama error';
+                            : 'Unknown CodeLoop error';
 
                     webviewView.webview.postMessage({
                         type: 'error',
