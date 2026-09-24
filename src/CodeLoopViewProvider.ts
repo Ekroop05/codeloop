@@ -1,31 +1,75 @@
 import * as vscode from 'vscode';
+import { OllamaService } from './OllamaService';
 
 export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
     public static readonly viewType = 'codeloop.chat';
 
+    private readonly ollamaService: OllamaService;
+
     constructor(
         private readonly extensionUri: vscode.Uri
-    ) {}
+    ) {
+        this.ollamaService = new OllamaService();
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView
     ): void {
+
         webviewView.webview.options = {
             enableScripts: true
         };
 
         webviewView.webview.html = this.getHtml();
+
+        webviewView.webview.onDidReceiveMessage(
+            async (message) => {
+
+                if (message.type !== 'chat') {
+                    return;
+                }
+
+                try {
+
+                    const response =
+                        await this.ollamaService.chat(
+                            message.prompt
+                        );
+
+                    webviewView.webview.postMessage({
+                        type: 'response',
+                        response
+                    });
+
+                } catch (error) {
+
+                    const errorMessage =
+                        error instanceof Error
+                            ? error.message
+                            : 'Unknown Ollama error';
+
+                    webviewView.webview.postMessage({
+                        type: 'error',
+                        error: errorMessage
+                    });
+                }
+            }
+        );
     }
 
     private getHtml(): string {
         return `
             <!DOCTYPE html>
+
             <html lang="en">
+
             <head>
+
                 <meta charset="UTF-8">
 
                 <style>
+
                     * {
                         box-sizing: border-box;
                     }
@@ -33,12 +77,17 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                     body {
                         margin: 0;
                         padding: 12px;
+
                         height: 100vh;
+
                         display: flex;
                         flex-direction: column;
 
-                        font-family: var(--vscode-font-family);
-                        color: var(--vscode-foreground);
+                        font-family:
+                            var(--vscode-font-family);
+
+                        color:
+                            var(--vscode-foreground);
                     }
 
                     /* Header */
@@ -54,57 +103,78 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
                     .subtitle {
                         margin-top: 3px;
+
                         font-size: 11px;
-                        color: var(--vscode-descriptionForeground);
+
+                        color:
+                            var(
+                                --vscode-descriptionForeground
+                            );
                     }
 
                     /* Chat */
 
                     .chat {
                         flex: 1;
+
                         overflow-y: auto;
+
                         padding: 4px 0 12px;
                     }
 
                     .message {
                         margin-bottom: 12px;
+
                         padding: 9px 10px;
 
                         border-radius: 6px;
 
                         white-space: pre-wrap;
+
                         word-wrap: break-word;
+
                         line-height: 1.4;
                     }
 
                     .user {
-                        background: var(
-                            --vscode-textCodeBlock-background
-                        );
+                        background:
+                            var(
+                                --vscode-textCodeBlock-background
+                            );
 
-                        border-left: 3px solid
-                            var(--vscode-textLink-foreground);
+                        border-left:
+                            3px solid
+                            var(
+                                --vscode-textLink-foreground
+                            );
                     }
 
                     .agent {
-                        background: var(
-                            --vscode-textBlockQuote-background
-                        );
+                        background:
+                            var(
+                                --vscode-textBlockQuote-background
+                            );
 
-                        border-left: 3px solid
-                            var(--vscode-descriptionForeground);
+                        border-left:
+                            3px solid
+                            var(
+                                --vscode-descriptionForeground
+                            );
                     }
 
                     .label {
                         margin-bottom: 4px;
 
                         font-size: 10px;
+
                         font-weight: 600;
+
                         text-transform: uppercase;
 
-                        color: var(
-                            --vscode-descriptionForeground
-                        );
+                        color:
+                            var(
+                                --vscode-descriptionForeground
+                            );
                     }
 
                     /* Input */
@@ -112,12 +182,14 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                     .input-area {
                         padding-top: 10px;
 
-                        border-top: 1px solid
+                        border-top:
+                            1px solid
                             var(--vscode-panel-border);
                     }
 
                     textarea {
                         width: 100%;
+
                         min-height: 70px;
                         max-height: 180px;
 
@@ -125,15 +197,20 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
                         resize: vertical;
 
-                        color: var(--vscode-input-foreground);
-                        background: var(--vscode-input-background);
+                        color:
+                            var(--vscode-input-foreground);
 
-                        border: 1px solid
+                        background:
+                            var(--vscode-input-background);
+
+                        border:
+                            1px solid
                             var(--vscode-input-border);
 
                         border-radius: 4px;
 
                         font-family: inherit;
+
                         outline: none;
                     }
 
@@ -146,7 +223,9 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
                     .actions {
                         display: flex;
+
                         gap: 6px;
+
                         margin-top: 6px;
                     }
 
@@ -156,43 +235,51 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                         padding: 7px;
 
                         border: none;
+
                         border-radius: 4px;
 
                         cursor: pointer;
 
-                        color: var(
-                            --vscode-button-foreground
-                        );
+                        color:
+                            var(
+                                --vscode-button-foreground
+                            );
 
-                        background: var(
-                            --vscode-button-background
-                        );
+                        background:
+                            var(
+                                --vscode-button-background
+                            );
                     }
 
                     button:hover {
-                        background: var(
-                            --vscode-button-hoverBackground
-                        );
+                        background:
+                            var(
+                                --vscode-button-hoverBackground
+                            );
                     }
 
                     button.secondary {
-                        color: var(
-                            --vscode-button-secondaryForeground
-                        );
+                        color:
+                            var(
+                                --vscode-button-secondaryForeground
+                            );
 
-                        background: var(
-                            --vscode-button-secondaryBackground
-                        );
+                        background:
+                            var(
+                                --vscode-button-secondaryBackground
+                            );
                     }
 
                     button.secondary:hover {
-                        background: var(
-                            --vscode-button-secondaryHoverBackground
-                        );
+                        background:
+                            var(
+                                --vscode-button-secondaryHoverBackground
+                            );
                     }
 
                     button:disabled {
                         opacity: 0.6;
+
                         cursor: default;
                     }
 
@@ -205,12 +292,16 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
                         font-size: 12px;
 
-                        color: var(
-                            --vscode-descriptionForeground
-                        );
+                        color:
+                            var(
+                                --vscode-descriptionForeground
+                            );
                     }
+
                 </style>
+
             </head>
+
 
             <body>
 
@@ -256,6 +347,7 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                             Send
                         </button>
 
+
                         <button
                             id="clear"
                             class="secondary"
@@ -275,19 +367,27 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
 
                     const chat =
-                        document.getElementById('chat');
+                        document.getElementById(
+                            'chat'
+                        );
 
 
                     const prompt =
-                        document.getElementById('prompt');
+                        document.getElementById(
+                            'prompt'
+                        );
 
 
                     const send =
-                        document.getElementById('send');
+                        document.getElementById(
+                            'send'
+                        );
 
 
                     const clear =
-                        document.getElementById('clear');
+                        document.getElementById(
+                            'clear'
+                        );
 
 
                     function addMessage(
@@ -296,7 +396,9 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                     ) {
 
                         const empty =
-                            document.getElementById('empty');
+                            document.getElementById(
+                                'empty'
+                            );
 
 
                         if (empty) {
@@ -305,7 +407,9 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
 
                         const message =
-                            document.createElement('div');
+                            document.createElement(
+                                'div'
+                            );
 
 
                         message.className =
@@ -313,7 +417,9 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
 
                         const label =
-                            document.createElement('div');
+                            document.createElement(
+                                'div'
+                            );
 
 
                         label.className =
@@ -327,18 +433,27 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
 
                         const content =
-                            document.createElement('div');
+                            document.createElement(
+                                'div'
+                            );
 
 
                         content.textContent =
                             text;
 
 
-                        message.appendChild(label);
+                        message.appendChild(
+                            label
+                        );
 
-                        message.appendChild(content);
+                        message.appendChild(
+                            content
+                        );
 
-                        chat.appendChild(message);
+
+                        chat.appendChild(
+                            message
+                        );
 
 
                         chat.scrollTop =
@@ -370,22 +485,12 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
 
                         vscode.postMessage({
+
                             type: 'chat',
+
                             prompt: message
+
                         });
-
-
-                        setTimeout(() => {
-
-                            addMessage(
-                                'agent',
-                                'Message received. CodeLoop is ready to connect to Ollama.'
-                            );
-
-
-                            send.disabled = false;
-
-                        }, 400);
                     }
 
 
@@ -428,10 +533,13 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
 
                             const emptyMessage =
-                                document.createElement('div');
+                                document.createElement(
+                                    'div'
+                                );
 
 
-                            emptyMessage.id = 'empty';
+                            emptyMessage.id =
+                                'empty';
 
 
                             emptyMessage.className =
@@ -448,9 +556,54 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                         }
                     );
 
+
+                    window.addEventListener(
+                        'message',
+                        (event) => {
+
+                            const message =
+                                event.data;
+
+
+                            if (
+                                message.type ===
+                                'response'
+                            ) {
+
+                                addMessage(
+                                    'agent',
+                                    message.response
+                                );
+
+                                send.disabled =
+                                    false;
+
+                                return;
+                            }
+
+
+                            if (
+                                message.type ===
+                                'error'
+                            ) {
+
+                                addMessage(
+                                    'agent',
+                                    'Error: ' +
+                                    message.error
+                                );
+
+                                send.disabled =
+                                    false;
+                            }
+
+                        }
+                    );
+
                 </script>
 
             </body>
+
             </html>
         `;
     }
