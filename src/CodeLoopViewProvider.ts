@@ -11,7 +11,6 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
     public resolveWebviewView(
         webviewView: vscode.WebviewView
     ): void {
-
         webviewView.webview.options = {
             enableScripts: true
         };
@@ -27,115 +26,427 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                 <meta charset="UTF-8">
 
                 <style>
+                    * {
+                        box-sizing: border-box;
+                    }
+
                     body {
+                        margin: 0;
                         padding: 12px;
+                        height: 100vh;
+                        display: flex;
+                        flex-direction: column;
+
                         font-family: var(--vscode-font-family);
                         color: var(--vscode-foreground);
                     }
 
-                    h2 {
-                        margin-top: 0;
+                    /* Header */
+
+                    .header {
+                        margin-bottom: 12px;
+                    }
+
+                    .title {
+                        font-size: 18px;
+                        font-weight: 600;
                     }
 
                     .subtitle {
+                        margin-top: 3px;
+                        font-size: 11px;
                         color: var(--vscode-descriptionForeground);
-                        font-size: 12px;
-                        margin-bottom: 20px;
+                    }
+
+                    /* Chat */
+
+                    .chat {
+                        flex: 1;
+                        overflow-y: auto;
+                        padding: 4px 0 12px;
+                    }
+
+                    .message {
+                        margin-bottom: 12px;
+                        padding: 9px 10px;
+
+                        border-radius: 6px;
+
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                        line-height: 1.4;
+                    }
+
+                    .user {
+                        background: var(
+                            --vscode-textCodeBlock-background
+                        );
+
+                        border-left: 3px solid
+                            var(--vscode-textLink-foreground);
+                    }
+
+                    .agent {
+                        background: var(
+                            --vscode-textBlockQuote-background
+                        );
+
+                        border-left: 3px solid
+                            var(--vscode-descriptionForeground);
+                    }
+
+                    .label {
+                        margin-bottom: 4px;
+
+                        font-size: 10px;
+                        font-weight: 600;
+                        text-transform: uppercase;
+
+                        color: var(
+                            --vscode-descriptionForeground
+                        );
+                    }
+
+                    /* Input */
+
+                    .input-area {
+                        padding-top: 10px;
+
+                        border-top: 1px solid
+                            var(--vscode-panel-border);
                     }
 
                     textarea {
                         width: 100%;
-                        box-sizing: border-box;
-                        resize: vertical;
-                        min-height: 80px;
+                        min-height: 70px;
+                        max-height: 180px;
+
                         padding: 8px;
+
+                        resize: vertical;
+
                         color: var(--vscode-input-foreground);
                         background: var(--vscode-input-background);
-                        border: 1px solid var(--vscode-input-border);
+
+                        border: 1px solid
+                            var(--vscode-input-border);
+
                         border-radius: 4px;
+
                         font-family: inherit;
+                        outline: none;
+                    }
+
+                    textarea:focus {
+                        border-color:
+                            var(--vscode-focusBorder);
+                    }
+
+                    /* Buttons */
+
+                    .actions {
+                        display: flex;
+                        gap: 6px;
+                        margin-top: 6px;
                     }
 
                     button {
-                        margin-top: 8px;
-                        width: 100%;
+                        flex: 1;
+
                         padding: 7px;
+
                         border: none;
                         border-radius: 4px;
+
                         cursor: pointer;
-                        color: var(--vscode-button-foreground);
-                        background: var(--vscode-button-background);
+
+                        color: var(
+                            --vscode-button-foreground
+                        );
+
+                        background: var(
+                            --vscode-button-background
+                        );
                     }
 
                     button:hover {
-                        background: var(--vscode-button-hoverBackground);
+                        background: var(
+                            --vscode-button-hoverBackground
+                        );
                     }
 
-                    .response {
-                        margin-top: 20px;
-                        padding: 10px;
-                        border-radius: 4px;
-                        background: var(--vscode-textBlockQuote-background);
-                        border: 1px solid var(--vscode-textBlockQuote-border);
-                        white-space: pre-wrap;
+                    button.secondary {
+                        color: var(
+                            --vscode-button-secondaryForeground
+                        );
+
+                        background: var(
+                            --vscode-button-secondaryBackground
+                        );
+                    }
+
+                    button.secondary:hover {
+                        background: var(
+                            --vscode-button-secondaryHoverBackground
+                        );
+                    }
+
+                    button:disabled {
+                        opacity: 0.6;
+                        cursor: default;
+                    }
+
+                    /* Empty state */
+
+                    .empty {
+                        margin-top: 40px;
+
+                        text-align: center;
+
+                        font-size: 12px;
+
+                        color: var(
+                            --vscode-descriptionForeground
+                        );
                     }
                 </style>
             </head>
 
             <body>
 
-                <h2>CodeLoop</h2>
+                <div class="header">
 
-                <div class="subtitle">
-                    Local-first AI coding agent
+                    <div class="title">
+                        CodeLoop
+                    </div>
+
+                    <div class="subtitle">
+                        Local-first AI coding agent
+                    </div>
+
                 </div>
 
-                <textarea
-                    id="prompt"
-                    placeholder="Ask CodeLoop..."
-                ></textarea>
-
-                <button id="send">
-                    Send
-                </button>
 
                 <div
-                    id="response"
-                    class="response"
+                    id="chat"
+                    class="chat"
                 >
-                    Ready.
+
+                    <div
+                        id="empty"
+                        class="empty"
+                    >
+                        Start a conversation with CodeLoop.
+                    </div>
+
                 </div>
+
+
+                <div class="input-area">
+
+                    <textarea
+                        id="prompt"
+                        placeholder="Ask CodeLoop..."
+                    ></textarea>
+
+
+                    <div class="actions">
+
+                        <button id="send">
+                            Send
+                        </button>
+
+                        <button
+                            id="clear"
+                            class="secondary"
+                        >
+                            Clear
+                        </button>
+
+                    </div>
+
+                </div>
+
 
                 <script>
 
-                    const vscode = acquireVsCodeApi();
+                    const vscode =
+                        acquireVsCodeApi();
+
+
+                    const chat =
+                        document.getElementById('chat');
+
 
                     const prompt =
                         document.getElementById('prompt');
 
+
                     const send =
                         document.getElementById('send');
 
-                    const response =
-                        document.getElementById('response');
 
-                    send.addEventListener('click', () => {
+                    const clear =
+                        document.getElementById('clear');
 
-                        const message = prompt.value.trim();
+
+                    function addMessage(
+                        role,
+                        text
+                    ) {
+
+                        const empty =
+                            document.getElementById('empty');
+
+
+                        if (empty) {
+                            empty.remove();
+                        }
+
+
+                        const message =
+                            document.createElement('div');
+
+
+                        message.className =
+                            'message ' + role;
+
+
+                        const label =
+                            document.createElement('div');
+
+
+                        label.className =
+                            'label';
+
+
+                        label.textContent =
+                            role === 'user'
+                                ? 'You'
+                                : 'CodeLoop';
+
+
+                        const content =
+                            document.createElement('div');
+
+
+                        content.textContent =
+                            text;
+
+
+                        message.appendChild(label);
+
+                        message.appendChild(content);
+
+                        chat.appendChild(message);
+
+
+                        chat.scrollTop =
+                            chat.scrollHeight;
+                    }
+
+
+                    function sendMessage() {
+
+                        const message =
+                            prompt.value.trim();
+
 
                         if (!message) {
                             return;
                         }
 
-                        response.textContent =
-                            'Message received by CodeLoop: ' + message;
+
+                        addMessage(
+                            'user',
+                            message
+                        );
+
+
+                        prompt.value = '';
+
+
+                        send.disabled = true;
+
 
                         vscode.postMessage({
                             type: 'chat',
                             prompt: message
                         });
 
-                    });
+
+                        setTimeout(() => {
+
+                            addMessage(
+                                'agent',
+                                'Message received. CodeLoop is ready to connect to Ollama.'
+                            );
+
+
+                            send.disabled = false;
+
+                        }, 400);
+                    }
+
+
+                    send.addEventListener(
+                        'click',
+                        sendMessage
+                    );
+
+
+                    prompt.addEventListener(
+                        'keydown',
+                        (event) => {
+
+                            if (
+                                event.key === 'Enter' &&
+                                !event.shiftKey
+                            ) {
+
+                                event.preventDefault();
+
+                                sendMessage();
+                            }
+                        }
+                    );
+
+
+                    clear.addEventListener(
+                        'click',
+                        (event) => {
+
+                            event.preventDefault();
+
+                            event.stopPropagation();
+
+
+                            prompt.value = '';
+
+
+                            chat.innerHTML = '';
+
+
+                            const emptyMessage =
+                                document.createElement('div');
+
+
+                            emptyMessage.id = 'empty';
+
+
+                            emptyMessage.className =
+                                'empty';
+
+
+                            emptyMessage.textContent =
+                                'Start a conversation with CodeLoop.';
+
+
+                            chat.appendChild(
+                                emptyMessage
+                            );
+                        }
+                    );
 
                 </script>
 
