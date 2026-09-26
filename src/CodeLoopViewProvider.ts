@@ -1,19 +1,24 @@
 import * as vscode from 'vscode';
 import { OllamaService } from './OllamaService';
 import { WorkspaceService } from './WorkspaceService';
-
+import { ToolRegistry } from './tools/ToolRegistry';
+import { ListFilesTool } from './tools/ListFilesTool';
 export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
 
     public static readonly viewType = 'codeloop.chat';
 
     private readonly ollamaService: OllamaService;
     private readonly workspaceService: WorkspaceService;
+    private readonly toolRegistry: ToolRegistry;
 
     constructor(
         private readonly extensionUri: vscode.Uri
     ) {
         this.ollamaService = new OllamaService();
         this.workspaceService = new WorkspaceService();
+        this.toolRegistry = new ToolRegistry();
+        this.toolRegistry.register(new ListFilesTool(
+            this.workspaceService));
     }
 
     public resolveWebviewView(
