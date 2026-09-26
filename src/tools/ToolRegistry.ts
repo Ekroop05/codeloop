@@ -15,7 +15,6 @@ export class ToolRegistry {
     get(
         name: string
     ): Tool | undefined {
-
         return this.tools.get(name);
     }
 
@@ -23,5 +22,15 @@ export class ToolRegistry {
         return Array.from(
             this.tools.values()
         );
+    }
+
+    getToolDescriptions(): string {
+
+        return this.getAll()
+            .map(
+                tool =>
+                    `- ${tool.name}: ${tool.description}`
+            )
+            .join('\n');
     }
 }

@@ -4,7 +4,7 @@ import { WorkspaceService } from './WorkspaceService';
 import { ToolRegistry } from './tools/ToolRegistry';
 import { ListFilesTool } from './tools/ListFilesTool';
 import { ReadFileTool } from './tools/ReadFileTool';
-
+import { ToolDecisionParser } from './tools/ToolDecisionParser';
 export class CodeLoopViewProvider
     implements vscode.WebviewViewProvider {
 
@@ -19,7 +19,9 @@ export class CodeLoopViewProvider
 
     private readonly toolRegistry:
         ToolRegistry;
-
+    
+    private readonly toolDecisionParser:
+    ToolDecisionParser;
     constructor(
         private readonly extensionUri: vscode.Uri
     ) {
@@ -31,6 +33,9 @@ export class CodeLoopViewProvider
 
         this.toolRegistry =
             new ToolRegistry();
+        
+        this.toolDecisionParser =
+            new ToolDecisionParser();
 
         this.toolRegistry.register(
             new ListFilesTool(
@@ -170,77 +175,197 @@ export class CodeLoopViewProvider
                 }
 
                 /*
-                 * Normal Ollama chat.
+                 * Automatic tool-aware Ollama chat.
+                 *
+                 * The model can request a registered tool by
+                 * returning a <tool_call> block. CodeLoop
+                 * executes the tool and sends the result back
+                 * to Ollama until the model produces a normal
+                 * final answer.
                  */
 
                 try {
-
-                    /*
-                     * Get workspace information.
-                     */
 
                     const workspaceRoot =
                         this.workspaceService
                             .getWorkspaceRoot();
 
-                    const workspaceFiles =
-                        await this.workspaceService
-                            .getWorkspaceFiles();
+                    const toolDescriptions =
+                        this.toolRegistry
+                            .getToolDescriptions();
 
-                    /*
-                     * Build the context that will be
-                     * provided to the local model.
-                     */
+                    const systemPrompt = `
+You are CodeLoop, a local-first AI coding agent running inside VS Code.
 
-                    const workspaceContext = `
+You have read-only access to the current VS Code workspace.
+
 Workspace root:
 ${workspaceRoot ?? 'No workspace open'}
 
-Workspace files:
-${workspaceFiles.length > 0
-    ? workspaceFiles.join('\n')
-    : 'No workspace files found'}
+Available tools:
+${toolDescriptions}
+
+IMPORTANT TOOL RULES:
+
+1. Never invent the contents of a source file.
+2. If the user's request requires information from a file,
+   use the read_file tool before answering.
+3. If you need to inspect the workspace structure,
+   use the list_files tool.
+4. Use paths relative to the workspace root.
+5. When requesting a tool, respond ONLY with this format:
+
+<tool_call>
+{
+  "tool": "tool_name",
+  "args": {
+    "argument": "value"
+  }
+}
+</tool_call>
+
+Example:
+
+<tool_call>
+{
+  "tool": "read_file",
+  "args": {
+    "path": "backend/src/main/java/com/vms/service/BookingService.java"
+  }
+}
+</tool_call>
+
+6. After receiving a tool result, use the actual result
+   to answer the user's request.
+7. Do not claim that you modified, created, or deleted files.
+8. If the available tool results do not contain enough
+   information, say what information is missing instead
+   of inventing it.
 `;
 
-                    /*
-                     * Build the final prompt.
-                     */
-
-                    const prompt = `
-You are CodeLoop, a local-first AI coding agent.
-
-You have read-only access to the current
-VS Code workspace.
-
-${workspaceContext}
+                    let conversationPrompt = `
+${systemPrompt}
 
 User request:
 ${message.prompt}
-
-Use the workspace information above
-when it is relevant.
-
-Do not claim that you modified,
-created, or deleted any files.
 `;
 
+                    let finalResponse = '';
+
+                    const maxToolCalls = 5;
+
+                    for (
+                        let attempt = 0;
+                        attempt < maxToolCalls;
+                        attempt++
+                    ) {
+
+                        const response =
+                            await this.ollamaService.chat(
+                                conversationPrompt
+                            );
+
+                        const decision =
+                            this.toolDecisionParser.parse(
+                                response
+                            );
+
+                        /*
+                         * No tool call means the model has
+                         * produced the final answer.
+                         */
+
+                        if (!decision) {
+
+                            finalResponse =
+                                response;
+
+                            break;
+                        }
+
+                        /*
+                         * Look up the requested tool.
+                         */
+
+                        const tool =
+                            this.toolRegistry.get(
+                                decision.tool
+                            );
+
+                        if (!tool) {
+
+                            conversationPrompt += `
+
+Assistant requested an unavailable tool:
+${response}
+
+Tool error:
+The tool "${decision.tool}" is not registered.
+
+Available tools:
+${toolDescriptions}
+
+Choose an available tool or provide the final answer.
+`;
+
+                            continue;
+                        }
+
+                        try {
+
+                            const toolResult =
+                                await tool.execute(
+                                    decision.args
+                                );
+
+                            conversationPrompt += `
+
+Assistant tool request:
+${response}
+
+Tool result from ${decision.tool}:
+${toolResult}
+
+Now continue the user's task using the actual tool result.
+If another file is required, request another tool.
+Otherwise provide the final answer.
+`;
+
+                        } catch (error) {
+
+                            const errorMessage =
+                                error instanceof Error
+                                    ? error.message
+                                    : 'Tool execution failed';
+
+                            conversationPrompt += `
+
+Assistant tool request:
+${response}
+
+Tool error from ${decision.tool}:
+${errorMessage}
+
+Do not invent the missing information.
+Continue the task if possible.
+`;
+                        }
+                    }
+
                     /*
-                     * Send the request to Ollama.
+                     * Prevent an empty response if the model
+                     * keeps requesting tools for all attempts.
                      */
 
-                    const response =
-                        await this.ollamaService.chat(
-                            prompt
-                        );
+                    if (!finalResponse) {
 
-                    /*
-                     * Send the response back
-                     * to the webview.
-                     */
+                        finalResponse =
+                            'CodeLoop reached the maximum number of tool calls without producing a final answer.';
+                    }
 
                     webviewView.webview.postMessage({
                         type: 'response',
-                        response
+                        response: finalResponse
                     });
 
                 } catch (error) {
