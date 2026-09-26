@@ -13,7 +13,7 @@ export class ListFilesTool implements Tool {
     ) {}
 
     async execute(
-        args: Record<string, unknown>
+        _args: Record<string, unknown>
     ): Promise<string> {
 
         const files =

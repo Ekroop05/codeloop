@@ -3,22 +3,46 @@ import { OllamaService } from './OllamaService';
 import { WorkspaceService } from './WorkspaceService';
 import { ToolRegistry } from './tools/ToolRegistry';
 import { ListFilesTool } from './tools/ListFilesTool';
-export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
+import { ReadFileTool } from './tools/ReadFileTool';
 
-    public static readonly viewType = 'codeloop.chat';
+export class CodeLoopViewProvider
+    implements vscode.WebviewViewProvider {
 
-    private readonly ollamaService: OllamaService;
-    private readonly workspaceService: WorkspaceService;
-    private readonly toolRegistry: ToolRegistry;
+    public static readonly viewType =
+        'codeloop.chat';
+
+    private readonly ollamaService:
+        OllamaService;
+
+    private readonly workspaceService:
+        WorkspaceService;
+
+    private readonly toolRegistry:
+        ToolRegistry;
 
     constructor(
         private readonly extensionUri: vscode.Uri
     ) {
-        this.ollamaService = new OllamaService();
-        this.workspaceService = new WorkspaceService();
-        this.toolRegistry = new ToolRegistry();
-        this.toolRegistry.register(new ListFilesTool(
-            this.workspaceService));
+        this.ollamaService =
+            new OllamaService();
+
+        this.workspaceService =
+            new WorkspaceService();
+
+        this.toolRegistry =
+            new ToolRegistry();
+
+        this.toolRegistry.register(
+            new ListFilesTool(
+                this.workspaceService
+            )
+        );
+
+        this.toolRegistry.register(
+            new ReadFileTool(
+                this.workspaceService
+            )
+        );
     }
 
     public resolveWebviewView(
@@ -29,7 +53,8 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
             enableScripts: true
         };
 
-        webviewView.webview.html = this.getHtml();
+        webviewView.webview.html =
+            this.getHtml();
 
         webviewView.webview.onDidReceiveMessage(
             async (message) => {
@@ -38,6 +63,116 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                     return;
                 }
 
+                /*
+                 * Execute the list_files tool.
+                 */
+
+                if (message.prompt === '/list-files') {
+
+                    try {
+
+                        const tool =
+                            this.toolRegistry.get(
+                                'list_files'
+                            );
+
+                        if (!tool) {
+                            throw new Error(
+                                'list_files tool is not registered.'
+                            );
+                        }
+
+                        const result =
+                            await tool.execute({});
+
+                        webviewView.webview.postMessage({
+                            type: 'response',
+                            response: result
+                        });
+
+                    } catch (error) {
+
+                        const errorMessage =
+                            error instanceof Error
+                                ? error.message
+                                : 'Tool execution failed';
+
+                        webviewView.webview.postMessage({
+                            type: 'error',
+                            error: errorMessage
+                        });
+                    }
+
+                    return;
+                }
+
+                /*
+                 * Execute the read_file tool.
+                 *
+                 * Usage:
+                 * /read-file <absolute-file-path>
+                 */
+
+                if (
+                    message.prompt.startsWith(
+                        '/read-file '
+                    )
+                ) {
+
+                    try {
+
+                        const filePath =
+                            message.prompt.substring(
+                                '/read-file '.length
+                            ).trim();
+
+                        if (!filePath) {
+                            throw new Error(
+                                'Please provide a file path.'
+                            );
+                        }
+
+                        const tool =
+                            this.toolRegistry.get(
+                                'read_file'
+                            );
+
+                        if (!tool) {
+                            throw new Error(
+                                'read_file tool is not registered.'
+                            );
+                        }
+
+                        const result =
+                            await tool.execute({
+                                path: filePath
+                            });
+
+                        webviewView.webview.postMessage({
+                            type: 'response',
+                            response: result
+                        });
+
+                    } catch (error) {
+
+                        const errorMessage =
+                            error instanceof Error
+                                ? error.message
+                                : 'Tool execution failed';
+
+                        webviewView.webview.postMessage({
+                            type: 'error',
+                            error: errorMessage
+                        });
+                    }
+
+                    return;
+                }
+
+                /*
+                 * Normal Ollama chat.
+                 */
+
                 try {
 
                     /*
@@ -45,11 +180,12 @@ export class CodeLoopViewProvider implements vscode.WebviewViewProvider {
                      */
 
                     const workspaceRoot =
-                        this.workspaceService.getWorkspaceRoot();
+                        this.workspaceService
+                            .getWorkspaceRoot();
 
                     const workspaceFiles =
-                        await this.workspaceService.getWorkspaceFiles();
-
+                        await this.workspaceService
+                            .getWorkspaceFiles();
 
                     /*
                      * Build the context that will be
@@ -65,7 +201,6 @@ ${workspaceFiles.length > 0
     ? workspaceFiles.join('\n')
     : 'No workspace files found'}
 `;
-
 
                     /*
                      * Build the final prompt.
@@ -89,7 +224,6 @@ Do not claim that you modified,
 created, or deleted any files.
 `;
 
-
                     /*
                      * Send the request to Ollama.
                      */
@@ -98,7 +232,6 @@ created, or deleted any files.
                         await this.ollamaService.chat(
                             prompt
                         );
-
 
                     /*
                      * Send the response back
@@ -127,6 +260,7 @@ created, or deleted any files.
     }
 
     private getHtml(): string {
+
         return `
             <!DOCTYPE html>
 
@@ -370,7 +504,6 @@ created, or deleted any files.
 
             </head>
 
-
             <body>
 
                 <div class="header">
@@ -384,7 +517,6 @@ created, or deleted any files.
                     </div>
 
                 </div>
-
 
                 <div
                     id="chat"
@@ -400,7 +532,6 @@ created, or deleted any files.
 
                 </div>
 
-
                 <div class="input-area">
 
                     <textarea
@@ -408,13 +539,11 @@ created, or deleted any files.
                         placeholder="Ask CodeLoop..."
                     ></textarea>
 
-
                     <div class="actions">
 
                         <button id="send">
                             Send
                         </button>
-
 
                         <button
                             id="clear"
@@ -427,36 +556,30 @@ created, or deleted any files.
 
                 </div>
 
-
                 <script>
 
                     const vscode =
                         acquireVsCodeApi();
-
 
                     const chat =
                         document.getElementById(
                             'chat'
                         );
 
-
                     const prompt =
                         document.getElementById(
                             'prompt'
                         );
-
 
                     const send =
                         document.getElementById(
                             'send'
                         );
 
-
                     const clear =
                         document.getElementById(
                             'clear'
                         );
-
 
                     function addMessage(
                         role,
@@ -468,47 +591,38 @@ created, or deleted any files.
                                 'empty'
                             );
 
-
                         if (empty) {
                             empty.remove();
                         }
-
 
                         const message =
                             document.createElement(
                                 'div'
                             );
 
-
                         message.className =
                             'message ' + role;
-
 
                         const label =
                             document.createElement(
                                 'div'
                             );
 
-
                         label.className =
                             'label';
-
 
                         label.textContent =
                             role === 'user'
                                 ? 'You'
                                 : 'CodeLoop';
 
-
                         const content =
                             document.createElement(
                                 'div'
                             );
 
-
                         content.textContent =
                             text;
-
 
                         message.appendChild(
                             label
@@ -518,39 +632,31 @@ created, or deleted any files.
                             content
                         );
 
-
                         chat.appendChild(
                             message
                         );
 
-
                         chat.scrollTop =
                             chat.scrollHeight;
                     }
-
 
                     function sendMessage() {
 
                         const message =
                             prompt.value.trim();
 
-
                         if (!message) {
                             return;
                         }
-
 
                         addMessage(
                             'user',
                             message
                         );
 
-
                         prompt.value = '';
 
-
                         send.disabled = true;
-
 
                         vscode.postMessage({
 
@@ -561,12 +667,10 @@ created, or deleted any files.
                         });
                     }
 
-
                     send.addEventListener(
                         'click',
                         sendMessage
                     );
-
 
                     prompt.addEventListener(
                         'keydown',
@@ -584,7 +688,6 @@ created, or deleted any files.
                         }
                     );
 
-
                     clear.addEventListener(
                         'click',
                         (event) => {
@@ -593,30 +696,23 @@ created, or deleted any files.
 
                             event.stopPropagation();
 
-
                             prompt.value = '';
 
-
                             chat.innerHTML = '';
-
 
                             const emptyMessage =
                                 document.createElement(
                                     'div'
                                 );
 
-
                             emptyMessage.id =
                                 'empty';
-
 
                             emptyMessage.className =
                                 'empty';
 
-
                             emptyMessage.textContent =
                                 'Start a conversation with CodeLoop.';
-
 
                             chat.appendChild(
                                 emptyMessage
@@ -624,14 +720,12 @@ created, or deleted any files.
                         }
                     );
 
-
                     window.addEventListener(
                         'message',
                         (event) => {
 
                             const message =
                                 event.data;
-
 
                             if (
                                 message.type ===
@@ -648,7 +742,6 @@ created, or deleted any files.
 
                                 return;
                             }
-
 
                             if (
                                 message.type ===

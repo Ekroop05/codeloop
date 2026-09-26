@@ -1,31 +1,20 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 
 export class WorkspaceService {
 
-    /**
-     * Returns the root folder of the currently
-     * opened VS Code workspace.
-     */
     getWorkspaceRoot(): string | undefined {
-
         const workspaceFolder =
             vscode.workspace.workspaceFolders?.[0];
 
         return workspaceFolder?.uri.fsPath;
     }
 
-    /**
-     * Returns files inside the workspace.
-     *
-     * This intentionally ignores common dependency
-     * and version-control directories.
-     */
     async getWorkspaceFiles(): Promise<string[]> {
-
         const files =
             await vscode.workspace.findFiles(
                 '**/*',
-                '**/{node_modules,.git,dist,out}/**'
+                '**/{node_modules,.git,dist,out,target}/**'
             );
 
         return files.map(
@@ -33,15 +22,29 @@ export class WorkspaceService {
         );
     }
 
-    /**
-     * Reads the contents of a workspace file.
-     */
     async readFile(
         filePath: string
     ): Promise<string> {
 
+        const workspaceRoot =
+            this.getWorkspaceRoot();
+
+        if (!workspaceRoot) {
+            throw new Error(
+                'No VS Code workspace is open.'
+            );
+        }
+
+        const resolvedPath =
+            path.isAbsolute(filePath)
+                ? filePath
+                : path.join(
+                    workspaceRoot,
+                    filePath
+                );
+
         const uri =
-            vscode.Uri.file(filePath);
+            vscode.Uri.file(resolvedPath);
 
         const data =
             await vscode.workspace.fs.readFile(uri);
