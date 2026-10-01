@@ -11,6 +11,9 @@ export class CodeLoopViewProvider
     public static readonly viewType =
         'codeloop.chat';
 
+    private static readonly MODEL_STATE_KEY =
+        'codeloop.selectedModel';
+
     private readonly ollamaService:
         OllamaService;
 
@@ -19,11 +22,20 @@ export class CodeLoopViewProvider
 
     private readonly toolRegistry:
         ToolRegistry;
-    
+
     private readonly toolDecisionParser:
-    ToolDecisionParser;
+        ToolDecisionParser;
+
+    private availableModels: string[] = [];
+
+    private selectedModel: string | undefined;
+
+    private webviewView:
+        vscode.WebviewView | undefined;
+
     constructor(
-        private readonly extensionUri: vscode.Uri
+        private readonly extensionUri: vscode.Uri,
+        private readonly context: vscode.ExtensionContext
     ) {
         this.ollamaService =
             new OllamaService();
@@ -33,7 +45,7 @@ export class CodeLoopViewProvider
 
         this.toolRegistry =
             new ToolRegistry();
-        
+
         this.toolDecisionParser =
             new ToolDecisionParser();
 
@@ -50,9 +62,102 @@ export class CodeLoopViewProvider
         );
     }
 
+    /**
+     * Load models from Ollama and send them
+     * to the webview.
+     */
+    private async loadModels(): Promise<void> {
+
+        try {
+
+            const models =
+                await this.ollamaService
+                    .getModels();
+
+            this.availableModels =
+                models.map(m => m.name);
+
+            /*
+             * Restore previously selected model
+             * if it is still available.
+             */
+
+            const savedModel =
+                this.context.globalState.get<string>(
+                    CodeLoopViewProvider
+                        .MODEL_STATE_KEY
+                );
+
+            if (
+                savedModel &&
+                this.availableModels.includes(
+                    savedModel
+                )
+            ) {
+                this.selectedModel = savedModel;
+
+            } else if (
+                this.availableModels.length > 0
+            ) {
+                this.selectedModel =
+                    this.availableModels[0];
+
+            } else {
+                this.selectedModel = undefined;
+            }
+
+            this.persistSelectedModel();
+
+            this.sendModelsToWebview();
+
+        } catch (error) {
+
+            console.error(
+                'CodeLoop: Failed to load Ollama models',
+                error
+            );
+
+            this.availableModels = [];
+            this.selectedModel = undefined;
+
+            this.webviewView?.webview.postMessage({
+                type: 'models-error',
+                error:
+                    'Ollama is not available. ' +
+                    'Make sure Ollama is running.'
+            });
+        }
+    }
+
+    /**
+     * Send the current model list and selection
+     * to the webview.
+     */
+    private sendModelsToWebview(): void {
+
+        this.webviewView?.webview.postMessage({
+            type: 'models',
+            models: this.availableModels,
+            selectedModel: this.selectedModel
+        });
+    }
+
+    /**
+     * Persist the selected model to global state.
+     */
+    private persistSelectedModel(): void {
+
+        this.context.globalState.update(
+            CodeLoopViewProvider.MODEL_STATE_KEY,
+            this.selectedModel
+        );
+    }
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView
     ): void {
+
+        this.webviewView = webviewView;
 
         webviewView.webview.options = {
             enableScripts: true
@@ -61,8 +166,50 @@ export class CodeLoopViewProvider
         webviewView.webview.html =
             this.getHtml();
 
+        /*
+         * Load models when the webview is ready,
+         * not during extension activation.
+         */
+        this.loadModels();
+
         webviewView.webview.onDidReceiveMessage(
             async (message) => {
+
+                /*
+                 * Handle model selection.
+                 */
+
+                if (
+                    message.type ===
+                    'select-model'
+                ) {
+
+                    if (
+                        this.availableModels
+                            .includes(
+                                message.model
+                            )
+                    ) {
+                        this.selectedModel =
+                            message.model;
+
+                        this.persistSelectedModel();
+                    }
+
+                    return;
+                }
+
+                /*
+                 * Handle model refresh.
+                 */
+
+                if (
+                    message.type ===
+                    'refresh-models'
+                ) {
+                    this.loadModels();
+                    return;
+                }
 
                 if (message.type !== 'chat') {
                     return;
@@ -186,6 +333,24 @@ export class CodeLoopViewProvider
 
                 try {
 
+                    /*
+                     * Guard: require a selected model.
+                     */
+
+                    if (!this.selectedModel) {
+
+                        webviewView.webview.postMessage({
+                            type: 'response',
+                            response:
+                                'No Ollama model is selected. ' +
+                                'Please install a model in Ollama ' +
+                                'and select it from the CodeLoop ' +
+                                'model selector.'
+                        });
+
+                        return;
+                    }
+
                     const workspaceRoot =
                         this.workspaceService
                             .getWorkspaceRoot();
@@ -262,7 +427,8 @@ ${message.prompt}
 
                         const response =
                             await this.ollamaService.chat(
-                                conversationPrompt
+                                conversationPrompt,
+                                this.selectedModel!
                             );
 
                         const decision =
@@ -625,6 +791,140 @@ Continue the task if possible.
                             );
                     }
 
+                    /* Model selector */
+
+                    .model-section {
+                        margin-bottom: 10px;
+
+                        padding-bottom: 10px;
+
+                        border-bottom:
+                            1px solid
+                            var(--vscode-panel-border);
+                    }
+
+                    .model-label {
+                        font-size: 10px;
+
+                        font-weight: 600;
+
+                        text-transform: uppercase;
+
+                        color:
+                            var(
+                                --vscode-descriptionForeground
+                            );
+
+                        margin-bottom: 4px;
+                    }
+
+                    .model-row {
+                        display: flex;
+
+                        gap: 4px;
+
+                        align-items: center;
+                    }
+
+                    #model-select {
+                        flex: 1;
+
+                        padding: 4px 6px;
+
+                        font-size: 12px;
+
+                        font-family: inherit;
+
+                        color:
+                            var(--vscode-input-foreground);
+
+                        background:
+                            var(--vscode-input-background);
+
+                        border:
+                            1px solid
+                            var(--vscode-input-border);
+
+                        border-radius: 4px;
+
+                        outline: none;
+
+                        cursor: pointer;
+                    }
+
+                    #model-select:focus {
+                        border-color:
+                            var(--vscode-focusBorder);
+                    }
+
+                    #model-select:disabled {
+                        opacity: 0.6;
+
+                        cursor: default;
+                    }
+
+                    #refresh-models {
+                        flex: none;
+
+                        width: 28px;
+                        height: 26px;
+
+                        padding: 0;
+
+                        font-size: 14px;
+
+                        line-height: 26px;
+
+                        text-align: center;
+
+                        border: none;
+
+                        border-radius: 4px;
+
+                        cursor: pointer;
+
+                        color:
+                            var(
+                                --vscode-descriptionForeground
+                            );
+
+                        background: transparent;
+                    }
+
+                    #refresh-models:hover {
+                        color:
+                            var(--vscode-foreground);
+
+                        background:
+                            var(
+                                --vscode-toolbar-hoverBackground
+                            );
+                    }
+
+                    #refresh-models:disabled {
+                        opacity: 0.4;
+
+                        cursor: default;
+                    }
+
+                    .model-status {
+                        margin-top: 3px;
+
+                        font-size: 11px;
+
+                        color:
+                            var(
+                                --vscode-descriptionForeground
+                            );
+                    }
+
+                    .model-status.error {
+                        color:
+                            var(
+                                --vscode-errorForeground
+                            );
+                    }
+
                 </style>
 
             </head>
@@ -640,6 +940,39 @@ Continue the task if possible.
                     <div class="subtitle">
                         Local-first AI coding agent
                     </div>
+
+                </div>
+
+                <div class="model-section">
+
+                    <div class="model-label">
+                        Model
+                    </div>
+
+                    <div class="model-row">
+
+                        <select
+                            id="model-select"
+                            disabled
+                        >
+                            <option value="">
+                                Loading models...
+                            </option>
+                        </select>
+
+                        <button
+                            id="refresh-models"
+                            title="Refresh models"
+                        >
+                            &#x21bb;
+                        </button>
+
+                    </div>
+
+                    <div
+                        id="model-status"
+                        class="model-status"
+                    ></div>
 
                 </div>
 
@@ -705,6 +1038,75 @@ Continue the task if possible.
                         document.getElementById(
                             'clear'
                         );
+
+                    const modelSelect =
+                        document.getElementById(
+                            'model-select'
+                        );
+
+                    const refreshModels =
+                        document.getElementById(
+                            'refresh-models'
+                        );
+
+                    const modelStatus =
+                        document.getElementById(
+                            'model-status'
+                        );
+
+                    /*
+                     * Model selection change.
+                     */
+
+                    modelSelect.addEventListener(
+                        'change',
+                        () => {
+
+                            const selected =
+                                modelSelect.value;
+
+                            if (selected) {
+
+                                vscode.postMessage({
+                                    type:
+                                        'select-model',
+                                    model: selected
+                                });
+                            }
+                        }
+                    );
+
+                    /*
+                     * Refresh models.
+                     */
+
+                    refreshModels.addEventListener(
+                        'click',
+                        () => {
+
+                            modelSelect.disabled =
+                                true;
+
+                            refreshModels.disabled =
+                                true;
+
+                            modelSelect.innerHTML =
+                                '<option value="">' +
+                                'Loading models...' +
+                                '</option>';
+
+                            modelStatus.textContent =
+                                '';
+
+                            modelStatus.className =
+                                'model-status';
+
+                            vscode.postMessage({
+                                type:
+                                    'refresh-models'
+                            });
+                        }
+                    );
 
                     function addMessage(
                         role,
@@ -851,6 +1253,153 @@ Continue the task if possible.
 
                             const message =
                                 event.data;
+
+                            /*
+                             * Handle model list.
+                             */
+
+                            if (
+                                message.type ===
+                                'models'
+                            ) {
+
+                                modelSelect
+                                    .innerHTML = '';
+
+                                refreshModels
+                                    .disabled = false;
+
+                                if (
+                                    message.models
+                                        .length === 0
+                                ) {
+
+                                    const opt =
+                                        document
+                                            .createElement(
+                                                'option'
+                                            );
+
+                                    opt.value = '';
+
+                                    opt.textContent =
+                                        'No models';
+
+                                    modelSelect
+                                        .appendChild(
+                                            opt
+                                        );
+
+                                    modelSelect
+                                        .disabled =
+                                            true;
+
+                                    modelStatus
+                                        .textContent =
+                                            'No Ollama models found. ' +
+                                            'Install a model and ' +
+                                            'refresh.';
+
+                                    modelStatus
+                                        .className =
+                                            'model-status';
+
+                                    return;
+                                }
+
+                                message.models
+                                    .forEach(
+                                        (model) => {
+
+                                            const opt =
+                                                document
+                                                    .createElement(
+                                                        'option'
+                                                    );
+
+                                            opt.value =
+                                                model;
+
+                                            opt.textContent =
+                                                model;
+
+                                            if (
+                                                model ===
+                                                message
+                                                    .selectedModel
+                                            ) {
+                                                opt.selected =
+                                                    true;
+                                            }
+
+                                            modelSelect
+                                                .appendChild(
+                                                    opt
+                                                );
+                                        }
+                                    );
+
+                                modelSelect
+                                    .disabled =
+                                        false;
+
+                                modelStatus
+                                    .textContent =
+                                        '';
+
+                                modelStatus
+                                    .className =
+                                        'model-status';
+
+                                return;
+                            }
+
+                            /*
+                             * Handle model error.
+                             */
+
+                            if (
+                                message.type ===
+                                'models-error'
+                            ) {
+
+                                modelSelect
+                                    .innerHTML = '';
+
+                                const opt =
+                                    document
+                                        .createElement(
+                                            'option'
+                                        );
+
+                                opt.value = '';
+
+                                opt.textContent =
+                                    'Unavailable';
+
+                                modelSelect
+                                    .appendChild(
+                                        opt
+                                    );
+
+                                modelSelect
+                                    .disabled =
+                                        true;
+
+                                refreshModels
+                                    .disabled =
+                                        false;
+
+                                modelStatus
+                                    .textContent =
+                                        message.error;
+
+                                modelStatus
+                                    .className =
+                                        'model-status error';
+
+                                return;
+                            }
 
                             if (
                                 message.type ===

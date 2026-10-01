@@ -1,34 +1,38 @@
+export interface OllamaModel {
+    name: string;
+    size?: number;
+    modified_at?: string;
+}
+
+interface OllamaTagsResponse {
+    models?: OllamaModel[];
+}
+
 export class OllamaService {
 
     private readonly baseUrl =
         'http://localhost:11434';
 
-    private readonly model =
-        'qwen2.5-coder:7b';
-
     async chat(
-        prompt: string
+        prompt: string,
+        model: string
     ): Promise<string> {
 
         const response = await fetch(
             `${this.baseUrl}/api/chat`,
             {
                 method: 'POST',
-
                 headers: {
                     'Content-Type': 'application/json'
                 },
-
                 body: JSON.stringify({
-                    model: this.model,
-
+                    model,
                     messages: [
                         {
                             role: 'user',
                             content: prompt
                         }
                     ],
-
                     stream: false
                 })
             }
@@ -50,5 +54,26 @@ export class OllamaService {
             };
 
         return data.message?.content ?? '';
+    }
+
+    async getModels(): Promise<OllamaModel[]> {
+
+        const response =
+            await fetch(
+                `${this.baseUrl}/api/tags`
+            );
+
+        if (!response.ok) {
+            throw new Error(
+                `Unable to get Ollama models: ${
+                    response.status
+                } ${response.statusText}`
+            );
+        }
+
+        const data =
+            await response.json() as OllamaTagsResponse;
+
+        return data.models ?? [];
     }
 }

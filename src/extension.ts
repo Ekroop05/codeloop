@@ -8,7 +8,8 @@ export function activate(
 
     const provider =
         new CodeLoopViewProvider(
-            context.extensionUri
+            context.extensionUri,
+            context
         );
 
     context.subscriptions.push(
